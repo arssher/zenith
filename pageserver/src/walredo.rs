@@ -156,7 +156,6 @@ impl WalRedoManager for PostgresRedoManager {
         base_img: Option<Bytes>,
         records: Vec<WALRecord>,
     ) -> Result<Bytes, WalRedoError> {
-
         let request = WalRedoRequest {
             rel,
             blknum,
@@ -168,13 +167,15 @@ impl WalRedoManager for PostgresRedoManager {
         // launch the WAL redo process on first use
         let mut process_guard = self.process.lock().unwrap();
         if process_guard.is_none() {
-            let p = self.runtime
+            let p = self
+                .runtime
                 .block_on(PostgresRedoProcess::launch(self.conf, &self.tenantid))?;
             *process_guard = Some(p);
         }
         let process = (*process_guard).as_ref().unwrap();
 
-        self.runtime.block_on(self.handle_apply_request(&process, &request))
+        self.runtime
+            .block_on(self.handle_apply_request(&process, &request))
     }
 }
 
@@ -197,12 +198,10 @@ fn mx_offset_to_member_offset(xid: MultiXactId) -> usize {
 }
 
 impl PostgresRedoManager {
-
     ///
     /// Create a new PostgresRedoManager.
     ///
     pub fn new(conf: &'static PageServerConf, tenantid: ZTenantId) -> PostgresRedoManager {
-
         // We block on waiting for requests on the walredo request channel, but
         // use async I/O to communicate with the child process. Initialize the
         // runtime for the async part.
