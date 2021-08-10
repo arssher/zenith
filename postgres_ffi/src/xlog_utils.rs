@@ -44,7 +44,6 @@ pub type TimeLineID = u32;
 pub type TimestampTz = i64;
 pub type XLogSegNo = u64;
 
-const XID_CHECKPOINT_INTERVAL: u32 = 1024;
 
 #[allow(non_snake_case)]
 pub fn XLogSegmentsPerXLogId(wal_segsz_bytes: usize) -> XLogSegNo {
@@ -350,9 +349,8 @@ impl CheckPoint {
     // Next XID should be greater than new_xid.
     // Also take in account 32-bit wrap-around.
     pub fn update_next_xid(&mut self, xid: u32) {
-        let xid = xid.wrapping_add(XID_CHECKPOINT_INTERVAL - 1) & !(XID_CHECKPOINT_INTERVAL - 1);
         let full_xid = self.nextXid.value;
-        let new_xid = std::cmp::max(xid + 1, pg_constants::FIRST_NORMAL_TRANSACTION_ID);
+        let new_xid = std::cmp::max(xid.wrapping_add(1), pg_constants::FIRST_NORMAL_TRANSACTION_ID);
         let old_xid = full_xid as u32;
         if new_xid.wrapping_sub(old_xid) as i32 > 0 {
             let mut epoch = full_xid >> 32;
