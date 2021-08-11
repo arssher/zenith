@@ -308,6 +308,18 @@ impl Timeline for ObjectTimeline {
             _ => (),
         };
 
+        if let RelishTag::FileNodeMap { .. } = rel {
+            if !self.get_rel_exists(rel, req_lsn).unwrap() {
+                return Err(anyhow!("FileNodeMap relish doesn't exist"));
+            }
+        }
+
+        if let RelishTag::TwoPhase { .. } = rel {
+            if !self.get_rel_exists(rel, req_lsn).unwrap() {
+                return Err(anyhow!("TwoPhase relish doesn't exist"));
+            }
+        }
+
         const ZERO_PAGE: [u8; 8192] = [0u8; 8192];
         // Look up the page entry. If it's a page image, return that. If it's a WAL record,
         // ask the WAL redo service to reconstruct the page image from the WAL records.
@@ -336,6 +348,8 @@ impl Timeline for ObjectTimeline {
                     // version. Otherwise we could opt to not do it, with the downside that
                     // the next GetPage@LSN call of the same page version would have to
                     // redo the WAL again.
+                    // XXX Why do we pass 'update_meta'=false here? In other situations we can
+                    // always decide it based on RelishTag
                     self.put_page_image(rel, blknum, lsn, page_img.clone(), false)?;
                 }
                 _ => bail!("Invalid object kind, expected a page entry"),
@@ -496,19 +510,16 @@ impl Timeline for ObjectTimeline {
                     },
                 );
             }
-        } else if let RelishTag::TwoPhase { xid: _ } = rel {
-            // This is non-blocky relish, so we put dummy relsize entry
-            // just to save the fact that such a segment exists at this lsn.
-            // GC will use this information to preserve segment if necessary.
-            self.put_relsize_entry(&rel, lsn, RelationSizeEntry::Size(1))?;
         }
+
         Ok(())
     }
 
-    /// Unlink relation. This method is used for marking dropped Relishes.
+    /// Unlink relish. This method is used for marking dropped Relishes.
     ///
     /// Note: each SLRU segment in PostgreSQL is considered a separate relish,
     /// so we can use unlink to truncate SLRU segments.
+    /// Also use it to remove Twophase and FileNodeMap relishes.
     fn put_unlink(&self, rel_tag: RelishTag, lsn: Lsn) -> Result<()> {
         self.put_relsize_entry(&rel_tag, lsn, RelationSizeEntry::Unlink)?;
 
@@ -584,12 +595,16 @@ impl Timeline for ObjectTimeline {
                     },
                 );
             }
-        } else if let RelishTag::TwoPhase { xid: _ } = rel {
-            // This is non-blocky relish, so we put dummy relsize entry
-            // just to save the fact that such a segment exists at this lsn.
+        }
+        else if rel.is_physical()
+        {
+            // Handle Twophase and FileNodeMap. These are non-blocky relishes,
+            // that represent files. So we put dummy relsize entry with size 1
+            // just to save the fact that such a file exists at this lsn.
             // GC will use this information to preserve segment if necessary.
             self.put_relsize_entry(&rel, lsn, RelationSizeEntry::Size(1))?;
         }
+
         Ok(())
     }
 
@@ -1004,7 +1019,12 @@ impl ObjectTimeline {
                                                 result.prep_deleted += 1;
                                             }
                                         }
-                                        // TODO treat unlinked FileNodeMap too
+                                        RelishTag::FileNodeMap { .. } => {
+                                            if !self.get_rel_exists(rel, last_lsn)? {
+                                                self.obj_store.unlink(&key, lsn)?;
+                                                result.filenodemap_deleted += 1;
+                                            }
+                                        }
                                         _ => (),
                                     }
                                 } else {

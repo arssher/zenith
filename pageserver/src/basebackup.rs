@@ -137,41 +137,42 @@ impl<'a> Basebackup<'a> {
     // Along with them also send PG_VERSION for each database.
     //
     fn add_relmap_file(&mut self, spcnode: u32, dbnode: u32) -> anyhow::Result<()> {
-        let img = self.timeline.get_page_at_lsn_nowait(
+        if let Ok(img) = self.timeline.get_page_at_lsn_nowait(
             RelishTag::FileNodeMap { spcnode, dbnode },
             0,
             self.lsn,
-        )?;
-        let path = if spcnode == pg_constants::GLOBALTABLESPACE_OID {
-            let dst_path = "PG_VERSION";
-            let version_bytes = pg_constants::PG_MAJORVERSION.as_bytes();
-            let header = new_tar_header(&dst_path, version_bytes.len() as u64)?;
-            self.ar.append(&header, &version_bytes[..])?;
+        ) {
+            let path = if spcnode == pg_constants::GLOBALTABLESPACE_OID {
+                let dst_path = "PG_VERSION";
+                let version_bytes = pg_constants::PG_MAJORVERSION.as_bytes();
+                let header = new_tar_header(&dst_path, version_bytes.len() as u64)?;
+                self.ar.append(&header, &version_bytes[..])?;
 
-            let dst_path = format!("global/PG_VERSION");
-            let header = new_tar_header(&dst_path, version_bytes.len() as u64)?;
-            self.ar.append(&header, &version_bytes[..])?;
+                let dst_path = format!("global/PG_VERSION");
+                let header = new_tar_header(&dst_path, version_bytes.len() as u64)?;
+                self.ar.append(&header, &version_bytes[..])?;
 
-            String::from("global/pg_filenode.map") // filenode map for global tablespace
-        } else {
-            // User defined tablespaces are not supported
-            assert!(spcnode == pg_constants::DEFAULTTABLESPACE_OID);
+                String::from("global/pg_filenode.map") // filenode map for global tablespace
+            } else {
+                // User defined tablespaces are not supported
+                assert!(spcnode == pg_constants::DEFAULTTABLESPACE_OID);
 
-            // Append dir path for each database
-            let path = format!("base/{}", dbnode);
-            let header = new_tar_header_dir(&path)?;
-            self.ar.append(&header, &mut io::empty())?;
+                // Append dir path for each database
+                let path = format!("base/{}", dbnode);
+                let header = new_tar_header_dir(&path)?;
+                self.ar.append(&header, &mut io::empty())?;
 
-            let dst_path = format!("base/{}/PG_VERSION", dbnode);
-            let version_bytes = pg_constants::PG_MAJORVERSION.as_bytes();
-            let header = new_tar_header(&dst_path, version_bytes.len() as u64)?;
-            self.ar.append(&header, &version_bytes[..])?;
+                let dst_path = format!("base/{}/PG_VERSION", dbnode);
+                let version_bytes = pg_constants::PG_MAJORVERSION.as_bytes();
+                let header = new_tar_header(&dst_path, version_bytes.len() as u64)?;
+                self.ar.append(&header, &version_bytes[..])?;
 
-            format!("base/{}/pg_filenode.map", dbnode)
-        };
-        assert!(img.len() == 512);
-        let header = new_tar_header(&path, img.len() as u64)?;
-        self.ar.append(&header, &img[..])?;
+                format!("base/{}/pg_filenode.map", dbnode)
+            };
+            assert!(img.len() == 512);
+            let header = new_tar_header(&path, img.len() as u64)?;
+            self.ar.append(&header, &img[..])?;
+        }
         Ok(())
     }
 
