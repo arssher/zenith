@@ -348,8 +348,6 @@ impl Timeline for ObjectTimeline {
                     // version. Otherwise we could opt to not do it, with the downside that
                     // the next GetPage@LSN call of the same page version would have to
                     // redo the WAL again.
-                    // XXX Why do we pass 'update_meta'=false here? In other situations we can
-                    // always decide it based on RelishTag
                     self.put_page_image(rel, blknum, lsn, page_img.clone(), false)?;
                 }
                 _ => bail!("Invalid object kind, expected a page entry"),
@@ -545,6 +543,10 @@ impl Timeline for ObjectTimeline {
 
     ///
     /// Memorize a full image of a page version
+    ///
+    /// `update_meta` flag is for use by GC - when it materializes
+    /// page version it never affects relish size. So, to avoid
+    /// unneeded relsize checks, it passes this flag as false.
     ///
     fn put_page_image(
         &self,

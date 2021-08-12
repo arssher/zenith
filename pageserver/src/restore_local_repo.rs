@@ -211,16 +211,12 @@ fn import_nonrel_file(
 
     info!("importing non-rel file {}", path.display());
 
-    let update_meta = match tag {
-        RelishTag::TwoPhase { .. } | RelishTag::FileNodeMap { .. } => true,
-        _ => false,
-    };
     timeline.put_page_image(
         tag,
         0,
         lsn,
         Bytes::copy_from_slice(&buffer[..]),
-        update_meta,
+        true,
     )?;
     Ok(())
 }
