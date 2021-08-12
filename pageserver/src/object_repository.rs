@@ -1186,7 +1186,7 @@ impl ObjectValue {
         }
     }
 
-    fn des_relsize(v: &[u8]) -> Result<RelationSizeEntry> {
+    pub fn des_relsize(v: &[u8]) -> Result<RelationSizeEntry> {
         match ObjectValue::des(&v)? {
             ObjectValue::RelationSize(rs) => Ok(rs),
             _ => {

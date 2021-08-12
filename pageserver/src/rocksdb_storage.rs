@@ -2,6 +2,7 @@
 //! An implementation of the ObjectStore interface, backed by RocksDB
 //!
 use crate::object_key::*;
+use crate::object_repository::{ObjectValue, RelationSizeEntry};
 use crate::object_store::ObjectStore;
 use crate::relish::*;
 use crate::PageServerConf;
@@ -242,7 +243,32 @@ impl ObjectStore for RocksObjectStore {
             if let ObjectTag::Buffer(rel_tag, _blknum) = key.obj_key.tag {
                 if key.lsn <= lsn {
                     // visible in this snapshot
-                    rels.insert(rel_tag);
+
+                    if rel_tag.is_physical()
+                    {
+                        // now check if the non-rel file still exists:
+                        // i.e doesn't have associated RelationSizeEntry::Unlink tombstone.
+
+                        let key = ObjectKey {
+                            timeline: timelineid,
+                            tag: ObjectTag::RelationMetadata(rel_tag),
+                        };
+
+                        let mut iter = self.object_versions(&key, lsn)?;
+
+                        if let Some((_, content)) = iter.next() {
+                            if let RelationSizeEntry::Size(_) =
+                                ObjectValue::des_relsize(&content[..])?
+                            {
+                                rels.insert(rel_tag);
+                            }
+                        }
+                    }
+                    else {
+                        // No extra checks needed for non-physical relishes
+                        rels.insert(rel_tag);
+                    }
+
                 }
             }
             // TODO: we could skip to next relation here like we do in list_rels(),
