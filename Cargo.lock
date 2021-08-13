@@ -2635,6 +2635,7 @@ dependencies = [
  "serde",
  "thiserror",
  "tokio",
+ "webpki",
  "workspace_hack",
  "zenith_metrics",
 ]
