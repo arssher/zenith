@@ -32,6 +32,8 @@ pub struct InMemoryLayer {
     ///
     start_lsn: Lsn,
 
+    oldest_pending_lsn: Lsn,
+
     /// The above fields never change. The parts that do change are in 'inner',
     /// and protected by mutex.
     inner: Mutex<InMemoryLayerInner>,
@@ -159,6 +161,12 @@ impl Layer for InMemoryLayer {
 }
 
 impl InMemoryLayer {
+
+    /// Return the oldest page version that's stored in this layer
+    pub fn get_oldest_pending_lsn(&self) -> Lsn {
+        self.oldest_pending_lsn
+    }
+
     ///
     /// Create a new, empty, in-memory layer
     ///
@@ -168,6 +176,7 @@ impl InMemoryLayer {
         tenantid: ZTenantId,
         seg: SegmentTag,
         start_lsn: Lsn,
+        oldest_pending_lsn: Lsn,
     ) -> Result<InMemoryLayer> {
         trace!(
             "initializing new empty InMemoryLayer for writing {} on timeline {} at {}",
@@ -182,6 +191,7 @@ impl InMemoryLayer {
             tenantid,
             seg,
             start_lsn,
+            oldest_pending_lsn,
             inner: Mutex::new(InMemoryLayerInner {
                 drop_lsn: None,
                 page_versions: BTreeMap::new(),
@@ -303,13 +313,14 @@ impl InMemoryLayer {
         src: &dyn Layer,
         timelineid: ZTimelineId,
         tenantid: ZTenantId,
-        lsn: Lsn,
+        start_lsn: Lsn,
+        oldest_pending_lsn: Lsn,
     ) -> Result<InMemoryLayer> {
         trace!(
             "initializing new InMemoryLayer for writing {} on timeline {} at {}",
             src.get_seg_tag(),
             timelineid,
-            lsn
+            start_lsn
         );
         let mut page_versions = BTreeMap::new();
         let mut segsizes = BTreeMap::new();
@@ -319,8 +330,8 @@ impl InMemoryLayer {
         let startblk;
         let size;
         if seg.rel.is_blocky() {
-            size = src.get_seg_size(lsn)?;
-            segsizes.insert(lsn, size);
+            size = src.get_seg_size(start_lsn)?;
+            segsizes.insert(start_lsn, size);
             startblk = seg.segno * RELISH_SEG_SIZE;
         } else {
             size = 1;
@@ -328,12 +339,12 @@ impl InMemoryLayer {
         }
 
         for blknum in startblk..(startblk + size) {
-            let img = timeline.materialize_page(seg, blknum, lsn, src)?;
+            let img = timeline.materialize_page(seg, blknum, start_lsn, src)?;
             let pv = PageVersion {
                 page_image: Some(img),
                 record: None,
             };
-            page_versions.insert((blknum, lsn), pv);
+            page_versions.insert((blknum, start_lsn), pv);
         }
 
         Ok(InMemoryLayer {
@@ -341,7 +352,8 @@ impl InMemoryLayer {
             timelineid,
             tenantid,
             seg: src.get_seg_tag(),
-            start_lsn: lsn,
+            start_lsn,
+            oldest_pending_lsn,
             inner: Mutex::new(InMemoryLayerInner {
                 drop_lsn: None,
                 page_versions: page_versions,
@@ -446,6 +458,7 @@ impl InMemoryLayer {
                 &snapfile,
                 self.timelineid,
                 self.tenantid,
+                end_lsn,
                 end_lsn,
             )?;
             let mut new_inner = new_open.inner.lock().unwrap();
