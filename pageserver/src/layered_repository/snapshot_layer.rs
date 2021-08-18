@@ -51,7 +51,7 @@ use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::ops::Bound::Included;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use bookfile::{Book, BookWriter};
@@ -451,6 +451,14 @@ impl SnapshotLayer {
             },
         );
 
+        *inner = Self::load_inner_from_path(&path)?;
+
+        debug!("loaded from {}", &path.display());
+
+        Ok(inner)
+    }
+
+    fn load_inner_from_path(path: &Path) -> Result<SnapshotLayerInner> {
         let file = File::open(&path)?;
         let book = Book::new(file)?;
 
@@ -462,13 +470,11 @@ impl SnapshotLayer {
 
         debug!("loaded from {}", &path.display());
 
-        *inner = SnapshotLayerInner {
+        Ok(SnapshotLayerInner {
             loaded: true,
             page_versions,
             relsizes,
-        };
-
-        Ok(inner)
+        })
     }
 
     /// Create SnapshotLayers representing all files on disk
@@ -525,23 +531,40 @@ impl SnapshotLayer {
         inner.loaded = false;
         Ok(())
     }
+}
+
+
+/// This is used by the self-standing debugging 'dump_snapfile' binary
+#[allow(unused)]
+pub fn dump_snapfile_from_path(path: &Path) -> Result<()> {
+    let inner = SnapshotLayer::load_inner_from_path(path)?;
+
+    inner.dump();
+
+    Ok(())
+}
+
+impl SnapshotLayerInner {
 
     /// debugging function to print out the contents of the layer
     #[allow(unused)]
-    pub fn dump(&self) -> String {
-        let mut result = format!(
-            "----- snapshot layer for {} {}-{} ----\n",
-            self.seg, self.start_lsn, self.end_lsn
-        );
+    pub fn dump(&self) {
+        println!("--- relsizes ---");
 
-        let inner = self.inner.lock().unwrap();
-        for (k, v) in inner.relsizes.iter() {
-            result += &format!("{}: {}\n", k, v);
+        for (k, v) in self.relsizes.iter() {
+            println!("  {}: {} blocks", k, v);
         }
-        //for (k, v) in inner.page_versions.iter() {
-        //    result += &format!("blk {} at {}: {}/{}\n", k.0, k.1, v.page_image.is_some(), v.record.is_some());
-        //}
+        println!("--- page versions ---");
+        for (k, v) in self.page_versions.iter() {
+            print!("  blk {} at {}:", k.0, k.1);
 
-        result
+            if let Some(img) = &v.page_image {
+                print!("  img {} bytes", img.len());
+            }
+            if let Some(rec) = &v.record {
+                print!("  rec {} bytes, will_init {}", rec.rec.len(), rec.will_init);
+            }
+            println!();
+        }
     }
 }

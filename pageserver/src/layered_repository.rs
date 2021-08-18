@@ -44,6 +44,8 @@ mod layer_map;
 mod snapshot_layer;
 mod storage_layer;
 
+pub use snapshot_layer::dump_snapfile_from_path;
+
 use inmemory_layer::InMemoryLayer;
 use layer_map::LayerMap;
 use snapshot_layer::SnapshotLayer;
