@@ -717,43 +717,43 @@ impl postgres_backend::Handler for PageServerHandler {
                 Some(&result.control_deleted.to_string().as_bytes()),
                 Some(&result.filenodemap_deleted.to_string().as_bytes()),
                 Some(&result.dropped.to_string().as_bytes()),
-                Some(&result.snapshot_relfiles_total.to_string().as_bytes()),
+                Some(&result.ondisk_relfiles_total.to_string().as_bytes()),
                 Some(
                     &result
-                        .snapshot_relfiles_needed_by_cutoff
+                        .ondisk_relfiles_needed_by_cutoff
                         .to_string()
                         .as_bytes(),
                 ),
                 Some(
                     &result
-                        .snapshot_relfiles_needed_by_branches
+                        .ondisk_relfiles_needed_by_branches
                         .to_string()
                         .as_bytes(),
                 ),
-                Some(&result.snapshot_relfiles_not_updated.to_string().as_bytes()),
-                Some(&result.snapshot_relfiles_removed.to_string().as_bytes()),
-                Some(&result.snapshot_relfiles_dropped.to_string().as_bytes()),
-                Some(&result.snapshot_nonrelfiles_total.to_string().as_bytes()),
+                Some(&result.ondisk_relfiles_not_updated.to_string().as_bytes()),
+                Some(&result.ondisk_relfiles_removed.to_string().as_bytes()),
+                Some(&result.ondisk_relfiles_dropped.to_string().as_bytes()),
+                Some(&result.ondisk_nonrelfiles_total.to_string().as_bytes()),
                 Some(
                     &result
-                        .snapshot_nonrelfiles_needed_by_cutoff
-                        .to_string()
-                        .as_bytes(),
-                ),
-                Some(
-                    &result
-                        .snapshot_nonrelfiles_needed_by_branches
+                        .ondisk_nonrelfiles_needed_by_cutoff
                         .to_string()
                         .as_bytes(),
                 ),
                 Some(
                     &result
-                        .snapshot_nonrelfiles_not_updated
+                        .ondisk_nonrelfiles_needed_by_branches
                         .to_string()
                         .as_bytes(),
                 ),
-                Some(&result.snapshot_nonrelfiles_removed.to_string().as_bytes()),
-                Some(&result.snapshot_nonrelfiles_dropped.to_string().as_bytes()),
+                Some(
+                    &result
+                        .ondisk_nonrelfiles_not_updated
+                        .to_string()
+                        .as_bytes(),
+                ),
+                Some(&result.ondisk_nonrelfiles_removed.to_string().as_bytes()),
+                Some(&result.ondisk_nonrelfiles_dropped.to_string().as_bytes()),
                 Some(&result.elapsed.as_millis().to_string().as_bytes()),
             ]))?
             .write_message(&BeMessage::CommandComplete(b"SELECT 1"))?;

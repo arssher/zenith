@@ -9,6 +9,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::path::PathBuf;
 
 use zenith_utils::lsn::Lsn;
 
@@ -102,6 +103,8 @@ pub trait Layer: Send + Sync {
     fn get_end_lsn(&self) -> Lsn;
     fn is_dropped(&self) -> bool;
 
+    fn filename(&self) -> PathBuf;
+
     ///
     /// Return data needed to reconstruct given page at LSN.
     ///
@@ -125,4 +128,9 @@ pub trait Layer: Send + Sync {
     fn get_seg_size(&self, lsn: Lsn) -> Result<u32>;
 
     fn get_seg_exists(&self, lsn: Lsn) -> Result<bool>;
+
+    fn is_incremental(&self) -> bool;
+
+    fn unload(&self) -> Result<()>;
+    fn delete(&self) -> Result<()>;
 }
