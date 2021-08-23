@@ -597,9 +597,7 @@ impl Timeline for ObjectTimeline {
                     },
                 );
             }
-        }
-        else if rel.is_physical()
-        {
+        } else if rel.is_physical() {
             // Handle Twophase and FileNodeMap. These are non-blocky relishes,
             // that represent files. So we put dummy relsize entry with size 1
             // just to save the fact that such a file exists at this lsn.

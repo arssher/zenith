@@ -244,8 +244,7 @@ impl ObjectStore for RocksObjectStore {
                 if key.lsn <= lsn {
                     // visible in this snapshot
 
-                    if rel_tag.is_physical()
-                    {
+                    if rel_tag.is_physical() {
                         // now check if the non-rel file still exists:
                         // i.e doesn't have associated RelationSizeEntry::Unlink tombstone.
 
@@ -263,12 +262,10 @@ impl ObjectStore for RocksObjectStore {
                                 rels.insert(rel_tag);
                             }
                         }
-                    }
-                    else {
+                    } else {
                         // No extra checks needed for non-physical relishes
                         rels.insert(rel_tag);
                     }
-
                 }
             }
             // TODO: we could skip to next relation here like we do in list_rels(),

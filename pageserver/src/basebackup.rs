@@ -178,8 +178,9 @@ impl<'a> Basebackup<'a> {
     // Extract twophase state files
     //
     fn add_twophase_file(&mut self, xid: TransactionId) -> anyhow::Result<()> {
-        let img = self.timeline
-                .get_page_at_lsn_nowait(RelishTag::TwoPhase { xid }, 0, self.lsn)?;
+        let img = self
+            .timeline
+            .get_page_at_lsn_nowait(RelishTag::TwoPhase { xid }, 0, self.lsn)?;
 
         let mut buf = BytesMut::new();
         buf.extend_from_slice(&img[..]);

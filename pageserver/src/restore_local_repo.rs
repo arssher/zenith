@@ -211,13 +211,7 @@ fn import_nonrel_file(
 
     info!("importing non-rel file {}", path.display());
 
-    timeline.put_page_image(
-        tag,
-        0,
-        lsn,
-        Bytes::copy_from_slice(&buffer[..]),
-        true,
-    )?;
+    timeline.put_page_image(tag, 0, lsn, Bytes::copy_from_slice(&buffer[..]), true)?;
     Ok(())
 }
 
@@ -454,7 +448,9 @@ pub fn save_decoded_record(
             // Remove twophase file. see RemoveTwoPhaseFile() in postgres code
             trace!(
                 "unlink twophaseFile for xid {} parsed_xact.xid {} here at {}",
-                decoded.xl_xid, parsed_xact.xid, lsn
+                decoded.xl_xid,
+                parsed_xact.xid,
+                lsn
             );
             timeline.put_unlink(
                 RelishTag::TwoPhase {
