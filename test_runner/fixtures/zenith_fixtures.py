@@ -141,6 +141,7 @@ class ZenithCli:
         assert os.path.isdir(binpath)
         self.binpath = binpath
         self.bin_zenith = os.path.join(binpath, 'zenith')
+        self.repo_dir = repo_dir
         self.env = os.environ.copy()
         self.env['ZENITH_REPO_DIR'] = repo_dir
         self.env['POSTGRES_DISTRIB_DIR'] = pg_distrib_dir
@@ -193,6 +194,12 @@ class ZenithPageserver(PgProtocol):
             cmd.append('--enable-auth')
         self.zenith_cli.run(cmd)
         return self
+
+    def repo_dir(self) -> str:
+        """
+        Return path to repository dir
+        """
+        return self.zenith_cli.repo_dir
 
     def start(self) -> 'ZenithPageserver':
         """
