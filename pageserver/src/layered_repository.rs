@@ -482,6 +482,33 @@ impl Timeline for LayeredTimeline {
             );
         }
 
+        // Handle truncated non-rel relishes
+        // We should never return a stale or zeroed page for the truncated SLRU segment.
+        // XXX if this will turn out to be performance critical,
+        // move this check out of the funciton.
+        //
+        match rel {
+            RelishTag::Slru { .. } | RelishTag::TwoPhase { .. } => {
+                if !self.get_rel_exists(rel, lsn).unwrap_or(false) {
+                    trace!("{:?} at {} doesn't exist", rel, lsn);
+                    return Err(anyhow!("non-rel relish doesn't exist"));
+                }
+            }
+            _ => (),
+        };
+
+        if let RelishTag::FileNodeMap { .. } = rel {
+            if !self.get_rel_exists(rel, lsn).unwrap() {
+                return Err(anyhow!("FileNodeMap relish doesn't exist"));
+            }
+        }
+
+        if let RelishTag::TwoPhase { .. } = rel {
+            if !self.get_rel_exists(rel, lsn).unwrap() {
+                return Err(anyhow!("TwoPhase relish doesn't exist"));
+            }
+        }
+
         let seg = SegmentTag::from_blknum(rel, blknum);
 
         if let Some((layer, lsn)) = self.get_layer_for_read(seg, lsn)? {
@@ -553,7 +580,7 @@ impl Timeline for LayeredTimeline {
         let mut all_rels = HashSet::new();
         let mut timeline = self;
         loop {
-            let rels = timeline.layers.lock().unwrap().list_rels(spcnode, dbnode)?;
+            let rels = timeline.layers.lock().unwrap().list_rels(spcnode, dbnode, lsn)?;
 
             all_rels.extend(rels.iter());
 
@@ -564,26 +591,6 @@ impl Timeline for LayeredTimeline {
                 break;
             }
         }
-
-        // Now we have a list of all rels that appeared anywhere in the history. Filter
-        // out relations that were dropped.
-        //
-        // FIXME: We should pass the LSN argument to the calls above, and avoid scanning
-        // dropped relations in the first place.
-        let mut res: Result<()> = Ok(());
-        all_rels.retain(
-            |reltag| match self.get_rel_exists(RelishTag::Relation(*reltag), lsn) {
-                Ok(exists) => {
-                    info!("retain: {} -> {}", *reltag, exists);
-                    exists
-                }
-                Err(err) => {
-                    res = Err(err);
-                    false
-                }
-            },
-        );
-        res?;
 
         Ok(all_rels)
     }
@@ -606,24 +613,6 @@ impl Timeline for LayeredTimeline {
                 break;
             }
         }
-
-        // Now we have a list of all nonrels that appeared anywhere in the history. Filter
-        // out dropped ones.
-        //
-        // FIXME: We should pass the LSN argument to the calls above, and avoid scanning
-        // dropped relations in the first place.
-        let mut res: Result<()> = Ok(());
-        all_rels.retain(|tag| match self.get_rel_exists(*tag, lsn) {
-            Ok(exists) => {
-                info!("retain: {} -> {}", *tag, exists);
-                exists
-            }
-            Err(err) => {
-                res = Err(err);
-                false
-            }
-        });
-        res?;
 
         Ok(all_rels)
     }
