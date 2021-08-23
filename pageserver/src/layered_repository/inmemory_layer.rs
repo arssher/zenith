@@ -410,11 +410,14 @@ impl InMemoryLayer {
     ///
     /// The cutoff point for the layer that's written to disk is 'end_lsn'.
     ///
-    /// Returns new layers that replace this one. Always returns a
-    /// SnapshotLayer containing the page versions that were written to disk,
-    /// but if there were page versions newer than 'end_lsn', also return a new
-    /// in-memory layer containing those page versions. The caller replaces
-    /// this layer with the returned layers in the layer map.
+    /// Returns new layers that replace this one. Always returns a new image
+    /// layer containing the page versions at the cutoff LSN, that were written
+    /// to disk, and usually also a DeltaLayer that includes all the WAL records
+    /// between start LSN and the cutoff. (The delta layer is not needed when
+    /// a new relish is created with a single LSN, so that the start and end LSN
+    /// are the same.) If there were page versions newer than 'end_lsn', also
+    /// returns a new in-memory layer containing those page versions. The caller
+    /// replaces this layer with the returned layers in the layer map.
     ///
     pub fn freeze(
         &self,
@@ -461,7 +464,11 @@ impl InMemoryLayer {
             before_page_versions = BTreeMap::new();
             after_page_versions = BTreeMap::new();
             for ((blknum, lsn), pv) in inner.page_versions.iter() {
-                if *lsn > end_lsn {
+                if *lsn == end_lsn {
+                    // Page versions at the cutoff LSN will be stored in the
+                    // materialized image layer, and don't need to be stored
+                    // in either delta layer
+                } else if *lsn > end_lsn {
                     after_page_versions.insert((*blknum, *lsn), pv.clone());
                 } else {
                     before_page_versions.insert((*blknum, *lsn), pv.clone());
@@ -477,7 +484,7 @@ impl InMemoryLayer {
         // we can release the lock now.
         drop(inner);
 
-        let mut historics: Vec<Arc<dyn Layer>> = Vec::new();
+        let mut frozen_layers: Vec<Arc<dyn Layer>> = Vec::new();
 
         // write a new base image layer at the cutoff point
         let imgfile = ImageLayer::create_from_src(
@@ -487,23 +494,27 @@ impl InMemoryLayer {
             end_lsn,
         )?;
         let imgfile_rc: Arc<dyn Layer> = Arc::new(imgfile);
-        historics.push(Arc::clone(&imgfile_rc));
+        frozen_layers.push(Arc::clone(&imgfile_rc));
 
-        // Write the page versions before the cutoff to disk.
-        let delta_layer = DeltaLayer::create(
-            self.conf,
-            self.timelineid,
-            self.tenantid,
-            self.seg,
-            self.start_lsn,
-            end_lsn,
-            dropped,
-            self.img_layer.clone(),
-            before_page_versions,
-            before_segsizes,
-        )?;
-        let delta_layer_rc: Arc<dyn Layer> = Arc::new(delta_layer);
-        historics.push(delta_layer_rc);
+        if self.start_lsn != end_lsn {
+            // Write the page versions before the cutoff to disk.
+            let delta_layer = DeltaLayer::create(
+                self.conf,
+                self.timelineid,
+                self.tenantid,
+                self.seg,
+                self.start_lsn,
+                end_lsn,
+                dropped,
+                self.img_layer.clone(),
+                before_page_versions,
+                before_segsizes,
+            )?;
+            let delta_layer_rc: Arc<dyn Layer> = Arc::new(delta_layer);
+            frozen_layers.push(delta_layer_rc);
+        } else {
+            assert!(before_page_versions.is_empty());
+        }
 
         // If there were any "new" page versions, initialize a new in-memory layer to hold
         // them
@@ -528,7 +539,7 @@ impl InMemoryLayer {
             None
         };
 
-        Ok((historics, new_open))
+        Ok((frozen_layers, new_open))
     }
 
     /// debugging function to print out the contents of the layer
