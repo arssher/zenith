@@ -1,6 +1,7 @@
 from pprint import pprint
 
 import os
+import timeit
 import pathlib
 import uuid
 import psycopg2
@@ -13,6 +14,7 @@ import signal
 import subprocess
 import time
 
+from contextlib import contextmanager
 from contextlib import closing
 from pathlib import Path
 from dataclasses import dataclass
@@ -41,12 +43,11 @@ def test_mybench(postgres: PostgresFactory, pageserver: ZenithPageserver, zenben
     ...
     
     # Run the test, timing how long it takes
-    start = timeit.default_timer()
-    cur.execute('SELECT test_query(...)')
-    end = timeit.default_timer()
+    with zenbenchmark.record_duration('test_query'):
+        cur.execute('SELECT test_query(...)')
 
-    # Record the result
-    zenbenchmark.record('test_query', end - start, 's')
+    # Record another measurement
+    zenbenchmark.record('speed_of_light', 300000, 'km/s')
 
 
 You can measure multiple things in one test, and record each one with a separate
@@ -102,6 +103,22 @@ class ZenithBenchmarker:
         Record a benchmark result.
         """
         self.results.record(self.request.node.name, metric_name, metric_value, unit)
+
+
+    @contextmanager
+    def record_duration(self, metric_name):
+        """
+        Record a duration. Usage:
+        
+        with zenbenchmark.record_duration('foobar_runtime'):
+            foobar()   # measure this
+        
+        """
+        start = timeit.default_timer()
+        yield
+        end = timeit.default_timer()
+
+        self.results.record(self.request.node.name, metric_name, end - start, 's')
 
 @pytest.fixture(scope='function')
 def zenbenchmark(zenbenchmark_global, request) -> Iterator[ZenithBenchmarker]:

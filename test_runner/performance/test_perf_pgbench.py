@@ -1,5 +1,4 @@
 import os
-import timeit
 from contextlib import closing
 from fixtures.zenith_fixtures import PostgresFactory, ZenithPageserver
 
@@ -47,23 +46,17 @@ def test_pgbench(postgres: PostgresFactory, pageserver: ZenithPageserver, pg_bin
 
     connstr = pg.connstr()
 
-    start = timeit.default_timer()
+    # Initialize pgbench database
+    with zenbenchmark.record_duration('init'):
+        pg_bin.run_capture(['pgbench', '-s5', '-i', connstr])
 
-    pg_bin.run_capture(['pgbench', '-s5', '-i', connstr])
-
-    # Flush the layers from memory to disk. The time to do that is included in the
-    # reported init time.
-    pscur.execute(f"do_gc {pageserver.initial_tenant} {timeline} 0")
-    end = timeit.default_timer()
-
-    zenbenchmark.record('init', end - start, 's')
+        # Flush the layers from memory to disk. The time to do that is included in the
+        # reported init time.
+        pscur.execute(f"do_gc {pageserver.initial_tenant} {timeline} 0")
 
     # Run pgbench for 5000 transactions
-    start = timeit.default_timer()
-    pg_bin.run_capture(['pgbench', '-c1', '-t5000', connstr])
-    end = timeit.default_timer()
-
-    zenbenchmark.record('5000_xacts', end - start, 's')
+    with zenbenchmark.record_duration('5000_xacts'):
+        pg_bin.run_capture(['pgbench', '-c1', '-t5000', connstr])
 
     # Flush the layers to disk again. This is *not' included in the reported time,
     # though.
