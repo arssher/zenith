@@ -2,7 +2,6 @@ import os
 import timeit
 from contextlib import closing
 from fixtures.zenith_fixtures import PostgresFactory, ZenithPageserver
-import psycopg2.extras
 
 pytest_plugins = ("fixtures.zenith_fixtures", "fixtures.benchmark_fixture")
 
@@ -11,7 +10,6 @@ def get_timeline_size(repo_dir, tenantid, timelineid):
 
     totalbytes = 0
     for root, dirs, files in os.walk(path):
-        print(root, "consumes", end=" ")
         for name in files:
             totalbytes += os.path.getsize(os.path.join(root, name))
 
@@ -39,7 +37,7 @@ def test_pgbench(postgres: PostgresFactory, pageserver: ZenithPageserver, pg_bin
     # Open a connection directly to the page server that we'll use to force
     # flushing the layers to disk
     psconn = pageserver.connect();
-    pscur = psconn.cursor(cursor_factory = psycopg2.extras.DictCursor)
+    pscur = psconn.cursor()
 
     # Get the timeline ID of our branch. We need it for the 'do_gc' command
     with closing(pg.connect()) as conn:

@@ -59,7 +59,7 @@ in the test initialization, or measure disk usage after the test query.
 # All the results are collected in this list, as a tuple:
 # (test_name: str, metric_name: str, metric_value: float, unit: str)
 #
-# TODO: It woul perhaps be better to store the results as additional
+# TODO: It would perhaps be better to store the results as additional
 # properties in the pytest TestReport objects, to make them visible to
 # other pytest tools.
 global zenbenchmark_results
@@ -106,11 +106,8 @@ class ZenithBenchmarker:
 @pytest.fixture(scope='function')
 def zenbenchmark(zenbenchmark_global, request) -> Iterator[ZenithBenchmarker]:
     """
-    This is a python decorator for benchmark fixtures
-
-    FIXME By default every test function will set up and tear down a new
-    database. In pytest, this is called fixtures "function" scope.
-
+    This is a python decorator for benchmark fixtures. It contains functions for
+    recording measurements, and prints them out at the end.
     """
     benchmarker = ZenithBenchmarker(zenbenchmark_global, request)
     yield benchmarker
