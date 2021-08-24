@@ -21,10 +21,7 @@ pub fn init_logging(
     let decorator = slog_term::PlainSyncDecorator::new(logger_file);
     let drain = slog_term::FullFormat::new(decorator).build();
     let drain = slog::Filter::new(drain, |record: &slog::Record| {
-        if record.level().is_at_least(slog::Level::Info) {
-            return true;
-        }
-        false
+        record.file().contains("pageserver") && record.level().is_at_least(slog::Level::Trace)
     });
     let drain = std::sync::Mutex::new(drain).fuse();
     let logger = slog::Logger::root(

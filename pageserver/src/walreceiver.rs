@@ -9,6 +9,7 @@ use crate::relish::*;
 use crate::restore_local_repo;
 use crate::waldecoder::*;
 use crate::{PageServerConf, RepositoryFormat};
+use anyhow::Context;
 use anyhow::{Error, Result};
 use lazy_static::lazy_static;
 use log::*;
@@ -107,7 +108,7 @@ fn thread_main(conf: &'static PageServerConf, timelineid: ZTimelineId, tenantid:
 
         if let Err(e) = res {
             info!(
-                "WAL streaming connection failed ({}), retrying in 1 second",
+                "WAL streaming connection failed ({:?}), retrying in 1 second",
                 e
             );
             sleep(Duration::from_secs(1));
@@ -201,7 +202,7 @@ fn walreceiver_main(
                     pg_constants::WAL_SEGMENT_SIZE,
                     data,
                     tenantid,
-                )?;
+                ).context("write_wal_file")?;
 
                 trace!("received XLogData between {} and {}", startlsn, endlsn);
 
@@ -217,7 +218,7 @@ fn walreceiver_main(
                         &decoded,
                         recdata,
                         lsn,
-                    )?;
+                    ).context("save_decoded_record")?;
                     last_rec_lsn = lsn;
 
                     let new_checkpoint_bytes = checkpoint.encode();
@@ -229,7 +230,7 @@ fn walreceiver_main(
                             lsn,
                             new_checkpoint_bytes,
                             false,
-                        )?;
+                        ).context("put_page_image")?;
                     }
                 }
 
