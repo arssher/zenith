@@ -2,7 +2,7 @@
 
 use std::{
     sync::{Arc, RwLock},
-    time::{Instant, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use ::metrics::{register_histogram, GaugeVec, Histogram, IntGauge, DISK_WRITE_SECONDS_BUCKETS};
@@ -15,6 +15,7 @@ use metrics::{
 use once_cell::sync::Lazy;
 
 use postgres_ffi::XLogSegNo;
+use tokio::time::interval;
 use utils::pageserver_feedback::PageserverFeedback;
 use utils::{id::TenantTimelineId, lsn::Lsn};
 
@@ -229,6 +230,7 @@ pub fn time_io_closure(closure: impl FnOnce() -> Result<()>) -> Result<f64> {
 }
 
 /// Metrics for a single timeline.
+#[derive(Clone)]
 pub struct FullTimelineInfo {
     pub ttid: TenantTimelineId,
     pub ps_feedback: PageserverFeedback,
@@ -609,5 +611,20 @@ impl Collector for TimelineCollector {
         mfs.extend(self.timelines_count.collect());
 
         mfs
+    }
+}
+
+/// Prometheus crate Collector interface is sync, and all safekeeper code is
+/// async. To bridge the gap, this function wakes once in scrape interval and
+/// copies metrics from under async lock to sync where collection can take it.
+pub async fn metrics_shifter() -> anyhow::Result<()> {
+    let scrape_interval = Duration::from_secs(30);
+    let mut interval = interval(scrape_interval);
+    loop {
+        interval.tick().await;
+        let timelines = GlobalTimelines::get_all();
+        for tli in timelines {
+            tli.set_info_for_metrics().await;
+        }
     }
 }

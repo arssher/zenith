@@ -55,7 +55,7 @@ pub trait Storage {
 
     /// Remove all segments <= given segno. Returns closure as we want to do
     /// that without timeline lock.
-    fn remove_up_to(&self) -> Box<dyn Fn(XLogSegNo) -> Result<()>>;
+    fn remove_up_to(&self) -> Box<dyn Fn(XLogSegNo) -> Result<()> + Send>;
 
     /// Release resources associated with the storage -- technically, close FDs.
     /// Currently we don't remove timelines until restart (#3146), so need to
@@ -411,7 +411,7 @@ impl Storage for PhysicalStorage {
         Ok(())
     }
 
-    fn remove_up_to(&self) -> Box<dyn Fn(XLogSegNo) -> Result<()>> {
+    fn remove_up_to(&self) -> Box<dyn Fn(XLogSegNo) -> Result<()> + Send> {
         let timeline_dir = self.timeline_dir.clone();
         let wal_seg_size = self.wal_seg_size;
         Box::new(move |segno_up_to: XLogSegNo| {
