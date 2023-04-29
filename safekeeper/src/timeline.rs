@@ -3,6 +3,7 @@
 
 use anyhow::{anyhow, bail, Result};
 use postgres_ffi::XLogSegNo;
+use tokio::fs;
 
 use std::cmp::max;
 use std::path::PathBuf;
@@ -368,7 +369,7 @@ impl Timeline {
     /// Bootstrap is transactional, so if it fails, created files will be deleted,
     /// and state on disk should remain unchanged.
     pub async fn bootstrap(&self, shared_state: &mut MutexGuard<'_, SharedState>) -> Result<()> {
-        match std::fs::metadata(&self.timeline_dir) {
+        match fs::metadata(&self.timeline_dir).await {
             Ok(_) => {
                 // Timeline directory exists on disk, we should leave state unchanged
                 // and return error.
@@ -381,14 +382,14 @@ impl Timeline {
         }
 
         // Create timeline directory.
-        std::fs::create_dir_all(&self.timeline_dir)?;
+        fs::create_dir_all(&self.timeline_dir).await?;
 
         // Write timeline to disk and TODO: start background tasks.
         if let Err(e) = shared_state.sk.persist().await {
             // Bootstrap failed, cancel timeline and remove timeline directory.
             self.cancel(shared_state);
 
-            if let Err(fs_err) = std::fs::remove_dir_all(&self.timeline_dir) {
+            if let Err(fs_err) = fs::remove_dir_all(&self.timeline_dir).await {
                 warn!(
                     "failed to remove timeline {} directory after bootstrap failure: {}",
                     self.ttid, fs_err
@@ -405,13 +406,13 @@ impl Timeline {
 
     /// Delete timeline from disk completely, by removing timeline directory. Background
     /// timeline activities will stop eventually.
-    pub fn delete_from_disk(
+    pub async fn delete_from_disk(
         &self,
-        shared_state: &mut MutexGuard<SharedState>,
+        shared_state: &mut MutexGuard<'_, SharedState>,
     ) -> Result<(bool, bool)> {
         let was_active = shared_state.active;
         self.cancel(shared_state);
-        let dir_existed = delete_dir(&self.timeline_dir)?;
+        let dir_existed = delete_dir(&self.timeline_dir).await?;
         Ok((dir_existed, was_active))
     }
 
@@ -737,8 +738,8 @@ impl Timeline {
 }
 
 /// Deletes directory and it's contents. Returns false if directory does not exist.
-fn delete_dir(path: &PathBuf) -> Result<bool> {
-    match std::fs::remove_dir_all(path) {
+async fn delete_dir(path: &PathBuf) -> Result<bool> {
+    match fs::remove_dir_all(path).await {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e.into()),

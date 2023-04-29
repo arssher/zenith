@@ -311,7 +311,8 @@ impl GlobalTimelines {
                 let mut shared_state = timeline.write_shared_state().await;
 
                 info!("deleting timeline {}", ttid);
-                let (dir_existed, was_active) = timeline.delete_from_disk(&mut shared_state)?;
+                let (dir_existed, was_active) =
+                    timeline.delete_from_disk(&mut shared_state).await?;
 
                 // Remove timeline from the map.
                 // FIXME: re-enable it once we fix the issue with recreation of deleted timelines
