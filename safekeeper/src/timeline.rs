@@ -144,8 +144,8 @@ impl SharedState {
     }
 
     /// Restore SharedState from control file. If file doesn't exist, bails out.
-    fn restore(conf: &SafeKeeperConf, ttid: &TenantTimelineId) -> Result<Self> {
-        let control_store = control_file::FileStorage::restore_new(ttid, conf)?;
+    async fn restore(conf: &SafeKeeperConf, ttid: &TenantTimelineId) -> Result<Self> {
+        let control_store = control_file::FileStorage::restore_new(ttid, conf).await?;
         if control_store.server.wal_seg_size == 0 {
             bail!(TimelineError::UninitializedWalSegSize(*ttid));
         }
@@ -309,14 +309,13 @@ pub struct Timeline {
 
 impl Timeline {
     /// Load existing timeline from disk.
-    pub fn load_timeline(
+    #[tracing::instrument(fields(timeline = %ttid.timeline_id), skip_all)]
+    pub async fn load_timeline(
         conf: SafeKeeperConf,
         ttid: TenantTimelineId,
         wal_backup_launcher_tx: Sender<TenantTimelineId>,
     ) -> Result<Timeline> {
-        let _enter = info_span!("load_timeline", timeline = %ttid.timeline_id).entered();
-
-        let shared_state = SharedState::restore(&conf, &ttid)?;
+        let shared_state = SharedState::restore(&conf, &ttid).await?;
         let rcl = shared_state.sk.state.remote_consistent_lsn;
         let (commit_lsn_watch_tx, commit_lsn_watch_rx) =
             watch::channel(shared_state.sk.state.commit_lsn);
@@ -385,27 +384,23 @@ impl Timeline {
         std::fs::create_dir_all(&self.timeline_dir)?;
 
         // Write timeline to disk and TODO: start background tasks.
-        match || -> Result<()> {
-            shared_state.sk.persist()?;
-            // TODO: add more initialization steps here
-            self.update_status(shared_state);
-            Ok(())
-        }() {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                // Bootstrap failed, cancel timeline and remove timeline directory.
-                self.cancel(shared_state);
+        if let Err(e) = shared_state.sk.persist().await {
+            // Bootstrap failed, cancel timeline and remove timeline directory.
+            self.cancel(shared_state);
 
-                if let Err(fs_err) = std::fs::remove_dir_all(&self.timeline_dir) {
-                    warn!(
-                        "failed to remove timeline {} directory after bootstrap failure: {}",
-                        self.ttid, fs_err
-                    );
-                }
-
-                Err(e)
+            if let Err(fs_err) = std::fs::remove_dir_all(&self.timeline_dir) {
+                warn!(
+                    "failed to remove timeline {} directory after bootstrap failure: {}",
+                    self.ttid, fs_err
+                );
             }
+
+            return Err(e);
         }
+
+        // TODO: add more initialization steps here
+        self.update_status(shared_state);
+        Ok(())
     }
 
     /// Delete timeline from disk completely, by removing timeline directory. Background
@@ -609,7 +604,7 @@ impl Timeline {
         let commit_lsn: Lsn;
         {
             let mut shared_state = self.write_shared_state().await;
-            shared_state.sk.record_safekeeper_info(&sk_info)?;
+            shared_state.sk.record_safekeeper_info(&sk_info).await?;
             let peer_info = PeerInfo::from_sk_info(&sk_info, Instant::now());
             shared_state.peers_info.upsert(&peer_info);
             is_wal_backup_action_pending = self.update_status(&mut shared_state);

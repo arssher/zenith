@@ -572,7 +572,7 @@ where
         msg: &ProposerAcceptorMessage,
     ) -> Result<Option<AcceptorProposerMessage>> {
         match msg {
-            ProposerAcceptorMessage::Greeting(msg) => self.handle_greeting(msg),
+            ProposerAcceptorMessage::Greeting(msg) => self.handle_greeting(msg).await,
             ProposerAcceptorMessage::VoteRequest(msg) => self.handle_vote_request(msg).await,
             ProposerAcceptorMessage::Elected(msg) => self.handle_elected(msg).await,
             ProposerAcceptorMessage::AppendRequest(msg) => {
@@ -587,7 +587,7 @@ where
 
     /// Handle initial message from proposer: check its sanity and send my
     /// current term.
-    fn handle_greeting(
+    async fn handle_greeting(
         &mut self,
         msg: &ProposerGreeting,
     ) -> Result<Option<AcceptorProposerMessage>> {
@@ -649,7 +649,7 @@ where
             if msg.pg_version != UNKNOWN_SERVER_VERSION {
                 state.server.pg_version = msg.pg_version;
             }
-            self.state.persist(&state)?;
+            self.state.persist(&state).await?;
         }
 
         info!(
@@ -692,7 +692,7 @@ where
             let mut state = self.state.clone();
             state.acceptor_state.term = msg.term;
             // persist vote before sending it out
-            self.state.persist(&state)?;
+            self.state.persist(&state).await?;
 
             resp.term = self.state.acceptor_state.term;
             resp.vote_given = true as u64;
@@ -723,7 +723,7 @@ where
         if self.state.acceptor_state.term < msg.term {
             let mut state = self.state.clone();
             state.acceptor_state.term = msg.term;
-            self.state.persist(&state)?;
+            self.state.persist(&state).await?;
         }
 
         // If our term is higher, ignore the message (next feedback will inform the compute)
@@ -787,7 +787,7 @@ where
             self.inmem.backup_lsn = max(self.inmem.backup_lsn, state.timeline_start_lsn);
 
             state.acceptor_state.term_history = msg.term_history.clone();
-            self.persist_control_file(state)?;
+            self.persist_control_file(state).await?;
         }
 
         info!("start receiving WAL since {:?}", msg.start_streaming_at);
@@ -799,7 +799,7 @@ where
     ///
     /// Note: it is assumed that 'WAL we have is from the right term' check has
     /// already been done outside.
-    fn update_commit_lsn(&mut self, mut candidate: Lsn) -> Result<()> {
+    async fn update_commit_lsn(&mut self, mut candidate: Lsn) -> Result<()> {
         // Both peers and walproposer communicate this value, we might already
         // have a fresher (higher) version.
         candidate = max(candidate, self.inmem.commit_lsn);
@@ -821,24 +821,24 @@ where
         // that we receive new epoch_start_lsn, and we still need to sync
         // control file in this case.
         if commit_lsn == self.epoch_start_lsn && self.state.commit_lsn != commit_lsn {
-            self.persist_control_file(self.state.clone())?;
+            self.persist_control_file(self.state.clone()).await?;
         }
 
         Ok(())
     }
 
     /// Persist control file to disk, called only after timeline creation (bootstrap).
-    pub fn persist(&mut self) -> Result<()> {
-        self.persist_control_file(self.state.clone())
+    pub async fn persist(&mut self) -> Result<()> {
+        self.persist_control_file(self.state.clone()).await
     }
 
     /// Persist in-memory state to the disk, taking other data from state.
-    fn persist_control_file(&mut self, mut state: SafeKeeperState) -> Result<()> {
+    async fn persist_control_file(&mut self, mut state: SafeKeeperState) -> Result<()> {
         state.commit_lsn = self.inmem.commit_lsn;
         state.backup_lsn = self.inmem.backup_lsn;
         state.peer_horizon_lsn = self.inmem.peer_horizon_lsn;
         state.proposer_uuid = self.inmem.proposer_uuid;
-        self.state.persist(&state)
+        self.state.persist(&state).await
     }
 
     /// Handle request to append WAL.
@@ -878,7 +878,7 @@ where
 
         // Update commit_lsn.
         if msg.h.commit_lsn != Lsn(0) {
-            self.update_commit_lsn(msg.h.commit_lsn)?;
+            self.update_commit_lsn(msg.h.commit_lsn).await?;
         }
         // Value calculated by walproposer can always lag:
         // - safekeepers can forget inmem value and send to proposer lower
@@ -894,7 +894,7 @@ where
         if self.state.peer_horizon_lsn + (self.state.server.wal_seg_size as u64)
             < self.inmem.peer_horizon_lsn
         {
-            self.persist_control_file(self.state.clone())?;
+            self.persist_control_file(self.state.clone()).await?;
         }
 
         trace!(
@@ -924,7 +924,7 @@ where
     }
 
     /// Update timeline state with peer safekeeper data.
-    pub fn record_safekeeper_info(&mut self, sk_info: &SafekeeperTimelineInfo) -> Result<()> {
+    pub async fn record_safekeeper_info(&mut self, sk_info: &SafekeeperTimelineInfo) -> Result<()> {
         let mut sync_control_file = false;
 
         if (Lsn(sk_info.commit_lsn) != Lsn::INVALID) && (sk_info.last_log_term != INVALID_TERM) {
@@ -932,7 +932,7 @@ where
             // commit_lsn if our history matches (is part of) history of advanced
             // commit_lsn provider.
             if sk_info.last_log_term == self.get_epoch() {
-                self.update_commit_lsn(Lsn(sk_info.commit_lsn))?;
+                self.update_commit_lsn(Lsn(sk_info.commit_lsn)).await?;
             }
         }
 
@@ -959,7 +959,7 @@ where
             // persisting cf -- that is not much needed currently. We could do
             // that by storing Arc to walsenders in Safekeeper.
             state.remote_consistent_lsn = new_remote_consistent_lsn;
-            self.persist_control_file(state)?;
+            self.persist_control_file(state).await?;
         }
         Ok(())
     }

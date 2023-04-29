@@ -127,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     if let Some(addr) = args.dump_control_file {
-        let state = control_file::FileStorage::load_control_file(addr)?;
+        let state = control_file::FileStorage::load_control_file(addr).await?;
         let json = serde_json::to_string(&state)?;
         print!("{json}");
         return Ok(());
@@ -233,7 +233,7 @@ async fn start_safekeeper(conf: SafeKeeperConf) -> Result<()> {
     let (wal_backup_launcher_tx, wal_backup_launcher_rx) = mpsc::channel(100);
 
     // Load all timelines from disk to memory.
-    GlobalTimelines::init(conf.clone(), wal_backup_launcher_tx)?;
+    GlobalTimelines::init(conf.clone(), wal_backup_launcher_tx).await?;
 
     // Keep handles to main tasks to die if any of them disappears. Probably
     // replace it with JoinSet once we update tokio.
