@@ -71,7 +71,7 @@ pub struct GlobalTimelines;
 
 impl GlobalTimelines {
     /// Inject dependencies needed for the timeline constructors and load all timelines to memory.
-    pub async fn init(
+    pub fn init(
         conf: SafeKeeperConf,
         wal_backup_launcher_tx: Sender<TenantTimelineId>,
     ) -> Result<()> {
@@ -93,7 +93,7 @@ impl GlobalTimelines {
                         TenantId::from_str(tenants_dir_entry.file_name().to_str().unwrap_or(""))
                     {
                         tenant_count += 1;
-                        GlobalTimelines::load_tenant_timelines(&mut state, tenant_id).await?;
+                        GlobalTimelines::load_tenant_timelines(&mut state, tenant_id)?;
                     }
                 }
                 Err(e) => error!(
@@ -114,14 +114,15 @@ impl GlobalTimelines {
     }
 
     /// Loads all timelines for the given tenant to memory. Returns fs::read_dir
-    /// errors if any. Note: we violate the rules here by holding locked
-    /// GlobalTimelinesState across awaits, but that's fine as this is called
-    /// only from single threaded main runtime on boot (not sure why I don't see
-    /// complains on MutexGuard being !Send).
+    /// errors if any.
     ///
-    /// It is possible to make it sync, but then pull_timeline should be
-    /// adjusted to have spawn_blocking loading of timeline.
-    async fn load_tenant_timelines(
+    /// Note: This function (and all reading/loading below) is sync because
+    /// timelines are loaded while holding GlobalTimelinesState lock. Which is
+    /// fine as this is called only from single threaded main runtime on boot,
+    /// but clippy complains anyway, and suppressing that isn't trivial as async
+    /// is the keyword, ha. That only other user is pull_timeline.rs for which
+    /// being blocked is not that bad, and we can do spawn_blocking.
+    fn load_tenant_timelines(
         state: &mut MutexGuard<'_, GlobalTimelinesState>,
         tenant_id: TenantId,
     ) -> Result<()> {
@@ -139,9 +140,7 @@ impl GlobalTimelines {
                             state.get_conf().clone(),
                             ttid,
                             state.wal_backup_launcher_tx.as_ref().unwrap().clone(),
-                        )
-                        .await
-                        {
+                        ) {
                             Ok(timeline) => {
                                 state.timelines.insert(ttid, Arc::new(timeline));
                             }
@@ -169,10 +168,10 @@ impl GlobalTimelines {
     }
 
     /// Load timeline from disk to the memory.
-    pub async fn load_timeline(ttid: TenantTimelineId) -> Result<Arc<Timeline>> {
+    pub fn load_timeline(ttid: TenantTimelineId) -> Result<Arc<Timeline>> {
         let (conf, wal_backup_launcher_tx) = TIMELINES_STATE.lock().unwrap().get_dependencies();
 
-        match Timeline::load_timeline(conf, ttid, wal_backup_launcher_tx).await {
+        match Timeline::load_timeline(conf, ttid, wal_backup_launcher_tx) {
             Ok(timeline) => {
                 let tli = Arc::new(timeline);
                 // TODO: prevent concurrent timeline creation/loading

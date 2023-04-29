@@ -2,9 +2,10 @@
 
 use anyhow::{bail, ensure, Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use tokio::fs::{self, File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::fs::{self, File};
+use tokio::io::AsyncWriteExt;
 
+use std::io::Read;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
@@ -43,13 +44,10 @@ pub struct FileStorage {
 
 impl FileStorage {
     /// Initialize storage by loading state from disk.
-    pub async fn restore_new(
-        ttid: &TenantTimelineId,
-        conf: &SafeKeeperConf,
-    ) -> Result<FileStorage> {
+    pub fn restore_new(ttid: &TenantTimelineId, conf: &SafeKeeperConf) -> Result<FileStorage> {
         let timeline_dir = conf.timeline_dir(ttid);
 
-        let state = Self::load_control_file_conf(conf, ttid).await?;
+        let state = Self::load_control_file_conf(conf, ttid)?;
 
         Ok(FileStorage {
             timeline_dir,
@@ -96,23 +94,20 @@ impl FileStorage {
     }
 
     /// Load control file for given ttid at path specified by conf.
-    pub async fn load_control_file_conf(
+    pub fn load_control_file_conf(
         conf: &SafeKeeperConf,
         ttid: &TenantTimelineId,
     ) -> Result<SafeKeeperState> {
         let path = conf.timeline_dir(ttid).join(CONTROL_FILE_NAME);
-        Self::load_control_file(path).await
+        Self::load_control_file(path)
     }
 
     /// Read in the control file.
-    pub async fn load_control_file<P: AsRef<Path>>(
-        control_file_path: P,
-    ) -> Result<SafeKeeperState> {
-        let mut control_file = OpenOptions::new()
+    pub fn load_control_file<P: AsRef<Path>>(control_file_path: P) -> Result<SafeKeeperState> {
+        let mut control_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open(&control_file_path)
-            .await
             .with_context(|| {
                 format!(
                     "failed to open control file at {}",
@@ -123,7 +118,6 @@ impl FileStorage {
         let mut buf = Vec::new();
         control_file
             .read_to_end(&mut buf)
-            .await
             .context("failed to read control file")?;
 
         let calculated_checksum = crc32c::crc32c(&buf[..buf.len() - CHECKSUM_SIZE]);
@@ -252,8 +246,8 @@ mod test {
             .await
             .expect("failed to create timeline dir");
         Ok((
-            FileStorage::restore_new(ttid, conf).await?,
-            FileStorage::load_control_file_conf(conf, ttid).await?,
+            FileStorage::restore_new(ttid, conf)?,
+            FileStorage::load_control_file_conf(conf, ttid)?,
         ))
     }
 

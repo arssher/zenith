@@ -197,7 +197,7 @@ async fn pull_timeline(status: TimelineStatus, host: String) -> Result<Response>
 
     let control_path = tli_dir_path.join("safekeeper.control");
 
-    let control_store = control_file::FileStorage::load_control_file(control_path).await?;
+    let control_store = control_file::FileStorage::load_control_file(control_path)?;
     if control_store.server.wal_seg_size == 0 {
         bail!("wal_seg_size is not set");
     }
@@ -226,9 +226,7 @@ async fn pull_timeline(status: TimelineStatus, host: String) -> Result<Response>
     tokio::fs::create_dir_all(conf.tenant_dir(&ttid.tenant_id)).await?;
     tokio::fs::rename(tli_dir_path, &timeline_path).await?;
 
-    let tli = GlobalTimelines::load_timeline(ttid)
-        .await
-        .context("Failed to load timeline after copy")?;
+    let tli = GlobalTimelines::load_timeline(ttid).context("Failed to load timeline after copy")?;
 
     info!(
         "Loaded timeline {}, flush_lsn={}",

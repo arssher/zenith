@@ -145,8 +145,8 @@ impl SharedState {
     }
 
     /// Restore SharedState from control file. If file doesn't exist, bails out.
-    async fn restore(conf: &SafeKeeperConf, ttid: &TenantTimelineId) -> Result<Self> {
-        let control_store = control_file::FileStorage::restore_new(ttid, conf).await?;
+    fn restore(conf: &SafeKeeperConf, ttid: &TenantTimelineId) -> Result<Self> {
+        let control_store = control_file::FileStorage::restore_new(ttid, conf)?;
         if control_store.server.wal_seg_size == 0 {
             bail!(TimelineError::UninitializedWalSegSize(*ttid));
         }
@@ -310,13 +310,14 @@ pub struct Timeline {
 
 impl Timeline {
     /// Load existing timeline from disk.
-    #[tracing::instrument(fields(timeline = %ttid.timeline_id), skip_all)]
-    pub async fn load_timeline(
+    pub fn load_timeline(
         conf: SafeKeeperConf,
         ttid: TenantTimelineId,
         wal_backup_launcher_tx: Sender<TenantTimelineId>,
     ) -> Result<Timeline> {
-        let shared_state = SharedState::restore(&conf, &ttid).await?;
+        let _enter = info_span!("load_timeline", timeline = %ttid.timeline_id).entered();
+
+        let shared_state = SharedState::restore(&conf, &ttid)?;
         let rcl = shared_state.sk.state.remote_consistent_lsn;
         let (commit_lsn_watch_tx, commit_lsn_watch_rx) =
             watch::channel(shared_state.sk.state.commit_lsn);
