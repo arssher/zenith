@@ -567,19 +567,21 @@ where
 
     /// Process message from proposer and possibly form reply. Concurrent
     /// callers must exclude each other.
-    pub fn process_msg(
+    pub async fn process_msg(
         &mut self,
         msg: &ProposerAcceptorMessage,
     ) -> Result<Option<AcceptorProposerMessage>> {
         match msg {
             ProposerAcceptorMessage::Greeting(msg) => self.handle_greeting(msg),
-            ProposerAcceptorMessage::VoteRequest(msg) => self.handle_vote_request(msg),
-            ProposerAcceptorMessage::Elected(msg) => self.handle_elected(msg),
-            ProposerAcceptorMessage::AppendRequest(msg) => self.handle_append_request(msg, true),
-            ProposerAcceptorMessage::NoFlushAppendRequest(msg) => {
-                self.handle_append_request(msg, false)
+            ProposerAcceptorMessage::VoteRequest(msg) => self.handle_vote_request(msg).await,
+            ProposerAcceptorMessage::Elected(msg) => self.handle_elected(msg).await,
+            ProposerAcceptorMessage::AppendRequest(msg) => {
+                self.handle_append_request(msg, true).await
             }
-            ProposerAcceptorMessage::FlushWAL => self.handle_flush(),
+            ProposerAcceptorMessage::NoFlushAppendRequest(msg) => {
+                self.handle_append_request(msg, false).await
+            }
+            ProposerAcceptorMessage::FlushWAL => self.handle_flush().await,
         }
     }
 
@@ -662,7 +664,7 @@ where
     }
 
     /// Give vote for the given term, if we haven't done that previously.
-    fn handle_vote_request(
+    async fn handle_vote_request(
         &mut self,
         msg: &VoteRequest,
     ) -> Result<Option<AcceptorProposerMessage>> {
@@ -676,7 +678,7 @@ where
         // handle_elected instead. Currently not a big deal, as proposer is the
         // only source of WAL; with peer2peer recovery it would be more
         // important.
-        self.wal_store.flush_wal()?;
+        self.wal_store.flush_wal().await?;
         // initialize with refusal
         let mut resp = VoteResponse {
             term: self.state.acceptor_state.term,
@@ -713,7 +715,10 @@ where
         ar
     }
 
-    fn handle_elected(&mut self, msg: &ProposerElected) -> Result<Option<AcceptorProposerMessage>> {
+    async fn handle_elected(
+        &mut self,
+        msg: &ProposerElected,
+    ) -> Result<Option<AcceptorProposerMessage>> {
         info!("received ProposerElected {:?}", msg);
         if self.state.acceptor_state.term < msg.term {
             let mut state = self.state.clone();
@@ -748,7 +753,7 @@ where
         // intersection of our history and history from msg
 
         // truncate wal, update the LSNs
-        self.wal_store.truncate_wal(msg.start_streaming_at)?;
+        self.wal_store.truncate_wal(msg.start_streaming_at).await?;
 
         // and now adopt term history from proposer
         {
@@ -838,7 +843,7 @@ where
 
     /// Handle request to append WAL.
     #[allow(clippy::comparison_chain)]
-    fn handle_append_request(
+    async fn handle_append_request(
         &mut self,
         msg: &AppendRequest,
         require_flush: bool,
@@ -861,12 +866,14 @@ where
 
         // do the job
         if !msg.wal_data.is_empty() {
-            self.wal_store.write_wal(msg.h.begin_lsn, &msg.wal_data)?;
+            self.wal_store
+                .write_wal(msg.h.begin_lsn, &msg.wal_data)
+                .await?;
         }
 
         // flush wal to the disk, if required
         if require_flush {
-            self.wal_store.flush_wal()?;
+            self.wal_store.flush_wal().await?;
         }
 
         // Update commit_lsn.
@@ -909,8 +916,8 @@ where
     }
 
     /// Flush WAL to disk. Return AppendResponse with latest LSNs.
-    fn handle_flush(&mut self) -> Result<Option<AcceptorProposerMessage>> {
-        self.wal_store.flush_wal()?;
+    async fn handle_flush(&mut self) -> Result<Option<AcceptorProposerMessage>> {
+        self.wal_store.flush_wal().await?;
         Ok(Some(AcceptorProposerMessage::AppendResponse(
             self.append_response(),
         )))

@@ -7,6 +7,7 @@ use std::{
 
 use ::metrics::{register_histogram, GaugeVec, Histogram, IntGauge, DISK_WRITE_SECONDS_BUCKETS};
 use anyhow::Result;
+use futures::Future;
 use metrics::{
     core::{AtomicU64, Collector, Desc, GenericCounter, GenericGaugeVec, Opts},
     proto::MetricFamily,
@@ -222,10 +223,12 @@ impl WalStorageMetrics {
     }
 }
 
-/// Accepts a closure that returns a result, and returns the duration of the closure.
-pub fn time_io_closure(closure: impl FnOnce() -> Result<()>) -> Result<f64> {
+/// Accepts async function that returns empty anyhow result, and returns the duration of its execution.
+pub async fn time_io_closure<E: Into<anyhow::Error>>(
+    closure: impl Future<Output = Result<(), E>>,
+) -> Result<f64> {
     let start = std::time::Instant::now();
-    closure()?;
+    closure.await.map_err(|e| e.into())?;
     Ok(start.elapsed().as_secs_f64())
 }
 

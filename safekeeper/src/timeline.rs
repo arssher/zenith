@@ -533,7 +533,7 @@ impl Timeline {
         let commit_lsn: Lsn;
         {
             let mut shared_state = self.write_shared_state().await;
-            rmsg = shared_state.sk.process_msg(msg)?;
+            rmsg = shared_state.sk.process_msg(msg).await?;
 
             // if this is AppendResponse, fill in proper pageserver and hot
             // standby feedback.
@@ -656,19 +656,19 @@ impl Timeline {
         }
 
         let horizon_segno: XLogSegNo;
-        let remover: Box<dyn Fn(u64) -> Result<(), anyhow::Error> + Send>;
-        {
+        let remover = {
             let shared_state = self.write_shared_state().await;
             horizon_segno = shared_state.sk.get_horizon_segno(wal_backup_enabled);
-            remover = shared_state.sk.wal_store.remove_up_to();
             if horizon_segno <= 1 || horizon_segno <= shared_state.last_removed_segno {
-                return Ok(());
+                return Ok(()); // nothing to do
             }
+            let remover = shared_state.sk.wal_store.remove_up_to(horizon_segno - 1);
             // release the lock before removing
-        }
+            remover
+        };
 
         // delete old WAL files
-        remover(horizon_segno - 1)?;
+        remover.await?;
 
         // update last_removed_segno
         let mut shared_state = self.write_shared_state().await;
