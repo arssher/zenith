@@ -234,7 +234,6 @@ mod test {
     use super::*;
     use crate::{safekeeper::SafeKeeperState, SafeKeeperConf};
     use anyhow::Result;
-    use std::fs;
     use utils::{id::TenantTimelineId, lsn::Lsn};
 
     fn stub_conf() -> SafeKeeperConf {
@@ -245,59 +244,75 @@ mod test {
         }
     }
 
-    fn load_from_control_file(
+    async fn load_from_control_file(
         conf: &SafeKeeperConf,
         ttid: &TenantTimelineId,
     ) -> Result<(FileStorage, SafeKeeperState)> {
-        fs::create_dir_all(conf.timeline_dir(ttid)).expect("failed to create timeline dir");
+        fs::create_dir_all(conf.timeline_dir(ttid))
+            .await
+            .expect("failed to create timeline dir");
         Ok((
-            FileStorage::restore_new(ttid, conf)?,
-            FileStorage::load_control_file_conf(conf, ttid)?,
+            FileStorage::restore_new(ttid, conf).await?,
+            FileStorage::load_control_file_conf(conf, ttid).await?,
         ))
     }
 
-    fn create(
+    async fn create(
         conf: &SafeKeeperConf,
         ttid: &TenantTimelineId,
     ) -> Result<(FileStorage, SafeKeeperState)> {
-        fs::create_dir_all(conf.timeline_dir(ttid)).expect("failed to create timeline dir");
+        fs::create_dir_all(conf.timeline_dir(ttid))
+            .await
+            .expect("failed to create timeline dir");
         let state = SafeKeeperState::empty();
         let storage = FileStorage::create_new(ttid, conf, state.clone())?;
         Ok((storage, state))
     }
 
-    #[test]
-    fn test_read_write_safekeeper_state() {
+    #[tokio::test]
+    async fn test_read_write_safekeeper_state() {
         let conf = stub_conf();
         let ttid = TenantTimelineId::generate();
         {
-            let (mut storage, mut state) = create(&conf, &ttid).expect("failed to create state");
+            let (mut storage, mut state) =
+                create(&conf, &ttid).await.expect("failed to create state");
             // change something
             state.commit_lsn = Lsn(42);
-            storage.persist(&state).expect("failed to persist state");
+            storage
+                .persist(&state)
+                .await
+                .expect("failed to persist state");
         }
 
-        let (_, state) = load_from_control_file(&conf, &ttid).expect("failed to read state");
+        let (_, state) = load_from_control_file(&conf, &ttid)
+            .await
+            .expect("failed to read state");
         assert_eq!(state.commit_lsn, Lsn(42));
     }
 
-    #[test]
-    fn test_safekeeper_state_checksum_mismatch() {
+    #[tokio::test]
+    async fn test_safekeeper_state_checksum_mismatch() {
         let conf = stub_conf();
         let ttid = TenantTimelineId::generate();
         {
-            let (mut storage, mut state) = create(&conf, &ttid).expect("failed to read state");
+            let (mut storage, mut state) =
+                create(&conf, &ttid).await.expect("failed to read state");
 
             // change something
             state.commit_lsn = Lsn(42);
-            storage.persist(&state).expect("failed to persist state");
+            storage
+                .persist(&state)
+                .await
+                .expect("failed to persist state");
         }
         let control_path = conf.timeline_dir(&ttid).join(CONTROL_FILE_NAME);
-        let mut data = fs::read(&control_path).unwrap();
+        let mut data = fs::read(&control_path).await.unwrap();
         data[0] += 1; // change the first byte of the file to fail checksum validation
-        fs::write(&control_path, &data).expect("failed to write control file");
+        fs::write(&control_path, &data)
+            .await
+            .expect("failed to write control file");
 
-        match load_from_control_file(&conf, &ttid) {
+        match load_from_control_file(&conf, &ttid).await {
             Err(err) => assert!(err
                 .to_string()
                 .contains("safekeeper control file checksum mismatch")),

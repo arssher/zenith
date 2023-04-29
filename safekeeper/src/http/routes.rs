@@ -231,10 +231,11 @@ async fn timeline_delete_force_handler(
     );
     check_permission(&request, Some(ttid.tenant_id))?;
     ensure_no_body(&mut request).await?;
-    let resp = 
-        // FIXME: `delete_force` can fail from both internal errors and bad requests. Add better
-        // error handling here when we're able to.
-        GlobalTimelines::delete_force(&ttid).await.map_err(ApiError::InternalServerError)?;
+    // FIXME: `delete_force` can fail from both internal errors and bad requests. Add better
+    // error handling here when we're able to.
+    let resp = GlobalTimelines::delete_force(&ttid)
+        .await
+        .map_err(ApiError::InternalServerError)?;
     json_response(StatusCode::OK, resp)
 }
 
@@ -246,11 +247,11 @@ async fn tenant_delete_force_handler(
     let tenant_id = parse_request_param(&request, "tenant_id")?;
     check_permission(&request, Some(tenant_id))?;
     ensure_no_body(&mut request).await?;
-    let delete_info = 
-        // FIXME: `delete_force_all_for_tenant` can return an error for multiple different reasons;
-        // Using an `InternalServerError` should be fixed when the types support it
-        GlobalTimelines::delete_force_all_for_tenant(&tenant_id).await
-            .map_err(ApiError::InternalServerError)?;
+    // FIXME: `delete_force_all_for_tenant` can return an error for multiple different reasons;
+    // Using an `InternalServerError` should be fixed when the types support it
+    let delete_info = GlobalTimelines::delete_force_all_for_tenant(&tenant_id)
+        .await
+        .map_err(ApiError::InternalServerError)?;
     json_response(
         StatusCode::OK,
         delete_info
@@ -346,8 +347,9 @@ async fn dump_debug_handler(mut request: Request<Body>) -> Result<Response<Body>
         timeline_id,
     };
 
-    let resp =
-        debug_dump::build(args).await.map_err(ApiError::InternalServerError)?;
+    let resp = debug_dump::build(args)
+        .await
+        .map_err(ApiError::InternalServerError)?;
 
     // TODO: use streaming response
     json_response(StatusCode::OK, resp)
@@ -400,7 +402,6 @@ pub fn make_router(conf: SafeKeeperConf) -> RouterBuilder<hyper::Body, ApiError>
         )
         .get("/v1/debug_dump", dump_debug_handler)
 }
-
 
 #[cfg(test)]
 mod tests {

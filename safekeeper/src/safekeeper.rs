@@ -983,6 +983,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use futures::future::BoxFuture;
     use postgres_ffi::WAL_SEGMENT_SIZE;
 
     use super::*;
@@ -994,8 +995,9 @@ mod tests {
         persisted_state: SafeKeeperState,
     }
 
+    #[async_trait::async_trait]
     impl control_file::Storage for InMemoryState {
-        fn persist(&mut self, s: &SafeKeeperState) -> Result<()> {
+        async fn persist(&mut self, s: &SafeKeeperState) -> Result<()> {
             self.persisted_state = s.clone();
             Ok(())
         }
@@ -1021,27 +1023,28 @@ mod tests {
         lsn: Lsn,
     }
 
+    #[async_trait::async_trait]
     impl wal_storage::Storage for DummyWalStore {
         fn flush_lsn(&self) -> Lsn {
             self.lsn
         }
 
-        fn write_wal(&mut self, startpos: Lsn, buf: &[u8]) -> Result<()> {
+        async fn write_wal(&mut self, startpos: Lsn, buf: &[u8]) -> Result<()> {
             self.lsn = startpos + buf.len() as u64;
             Ok(())
         }
 
-        fn truncate_wal(&mut self, end_pos: Lsn) -> Result<()> {
+        async fn truncate_wal(&mut self, end_pos: Lsn) -> Result<()> {
             self.lsn = end_pos;
             Ok(())
         }
 
-        fn flush_wal(&mut self) -> Result<()> {
+        async fn flush_wal(&mut self) -> Result<()> {
             Ok(())
         }
 
-        fn remove_up_to(&self) -> Box<dyn Fn(XLogSegNo) -> Result<()>> {
-            Box::new(move |_segno_up_to: XLogSegNo| Ok(()))
+        fn remove_up_to(&self, _segno_up_to: XLogSegNo) -> BoxFuture<'static, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
         }
 
         fn get_metrics(&self) -> crate::metrics::WalStorageMetrics {
@@ -1049,8 +1052,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_voting() {
+    #[tokio::test]
+    async fn test_voting() {
         let storage = InMemoryState {
             persisted_state: test_sk_state(),
         };
@@ -1059,7 +1062,7 @@ mod tests {
 
         // check voting for 1 is ok
         let vote_request = ProposerAcceptorMessage::VoteRequest(VoteRequest { term: 1 });
-        let mut vote_resp = sk.process_msg(&vote_request);
+        let mut vote_resp = sk.process_msg(&vote_request).await;
         match vote_resp.unwrap() {
             Some(AcceptorProposerMessage::VoteResponse(resp)) => assert!(resp.vote_given != 0),
             r => panic!("unexpected response: {:?}", r),
@@ -1074,15 +1077,15 @@ mod tests {
         sk = SafeKeeper::new(storage, sk.wal_store, NodeId(0)).unwrap();
 
         // and ensure voting second time for 1 is not ok
-        vote_resp = sk.process_msg(&vote_request);
+        vote_resp = sk.process_msg(&vote_request).await;
         match vote_resp.unwrap() {
             Some(AcceptorProposerMessage::VoteResponse(resp)) => assert!(resp.vote_given == 0),
             r => panic!("unexpected response: {:?}", r),
         }
     }
 
-    #[test]
-    fn test_epoch_switch() {
+    #[tokio::test]
+    async fn test_epoch_switch() {
         let storage = InMemoryState {
             persisted_state: test_sk_state(),
         };
@@ -1114,10 +1117,13 @@ mod tests {
             timeline_start_lsn: Lsn(0),
         };
         sk.process_msg(&ProposerAcceptorMessage::Elected(pem))
+            .await
             .unwrap();
 
         // check that AppendRequest before epochStartLsn doesn't switch epoch
-        let resp = sk.process_msg(&ProposerAcceptorMessage::AppendRequest(append_request));
+        let resp = sk
+            .process_msg(&ProposerAcceptorMessage::AppendRequest(append_request))
+            .await;
         assert!(resp.is_ok());
         assert_eq!(sk.get_epoch(), 0);
 
@@ -1128,9 +1134,11 @@ mod tests {
             h: ar_hdr,
             wal_data: Bytes::from_static(b"b"),
         };
-        let resp = sk.process_msg(&ProposerAcceptorMessage::AppendRequest(append_request));
+        let resp = sk
+            .process_msg(&ProposerAcceptorMessage::AppendRequest(append_request))
+            .await;
         assert!(resp.is_ok());
-        sk.wal_store.truncate_wal(Lsn(3)).unwrap(); // imitate the complete record at 3 %)
+        sk.wal_store.truncate_wal(Lsn(3)).await.unwrap(); // imitate the complete record at 3 %)
         assert_eq!(sk.get_epoch(), 1);
     }
 }
